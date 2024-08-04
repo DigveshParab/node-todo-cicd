@@ -1,39 +1,46 @@
 pipeline {
-    agent { label "dev-server"}
-    
+    agent any
+
+    environment {
+        IMAGE_NAME = "todo-node-app"
+        CONTAINER_NAME = "todo-node-app-container"
+        UNIQUE_TAG = "${env.BUILD_ID}"
+        FULL_IMAGE_NAME = "${IMAGE_NAME}:${UNIQUE_TAG}"
+    }
+
     stages {
-        
-        stage("code"){
-            steps{
-                git url: "https://github.com/LondheShubham153/node-todo-cicd.git", branch: "master"
-                echo 'bhaiyya code clone ho gaya'
-            }
-        }
-        stage("build and test"){
-            steps{
-                sh "docker build -t node-app-test-new ."
-                echo 'code build bhi ho gaya'
-            }
-        }
-        stage("scan image"){
-            steps{
-                echo 'image scanning ho gayi'
-            }
-        }
-        stage("push"){
-            steps{
-                withCredentials([usernamePassword(credentialsId:"dockerHub",passwordVariable:"dockerHubPass",usernameVariable:"dockerHubUser")]){
-                sh "docker login -u ${env.dockerHubUser} -p ${env.dockerHubPass}"
-                sh "docker tag node-app-test-new:latest ${env.dockerHubUser}/node-app-test-new:latest"
-                sh "docker push ${env.dockerHubUser}/node-app-test-new:latest"
-                echo 'image push ho gaya'
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build the Docker image with a unique tag
+                    sh "docker build -t ${FULL_IMAGE_NAME} ."
                 }
             }
         }
-        stage("deploy"){
-            steps{
-                sh "docker-compose down && docker-compose up -d"
-                echo 'deployment ho gayi'
+        
+        stage('Deploy Docker Container') {
+            steps {
+                script {
+                    // Stop and remove any existing container with the same name
+                    sh """
+                    if [ $(docker ps -aq -f name=${CONTAINER_NAME}) ]; then
+                        docker stop ${CONTAINER_NAME}
+                        docker rm ${CONTAINER_NAME}
+                    fi
+                    """
+                    
+                    // Run the new container
+                    sh "docker run -d --name ${CONTAINER_NAME} -p 8000:8000 ${FULL_IMAGE_NAME}"
+                }
+            }
+        }
+    }
+
+    post {
+        cleanup {
+            script {
+                // Remove old images to free up space
+                sh "docker image prune -f"
             }
         }
     }
